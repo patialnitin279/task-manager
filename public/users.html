@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team — TaskFlow</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .team-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 16px;
+        }
+        .team-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            text-align: center;
+            transition: transform var(--t), border-color var(--t);
+        }
+        .team-card:hover { transform: translateY(-2px); border-color: var(--text-muted); }
+        .team-card .avatar { width: 56px; height: 56px; font-size: 1.2rem; margin: 0 auto 12px; }
+        .team-card-name { font-size: 1rem; font-weight: 700; }
+        .team-card-email { font-size: 0.78rem; color: var(--text-muted); margin-top: 3px; }
+        .team-card-role { margin-top: 8px; }
+        .team-card-stats { display: flex; justify-content: center; gap: 20px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-light); }
+        .team-stat { text-align: center; }
+        .team-stat-val { font-size: 1.1rem; font-weight: 700; }
+        .team-stat-lbl { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    </style>
+</head>
+<body>
+<div id="toast-container"></div>
+<div class="app-shell">
+    <div id="sidebar-wrap"></div>
+    <header class="topbar">
+        <span class="topbar-title">Team</span>
+        <div class="topbar-actions">
+            <button class="btn btn-primary btn-sm" onclick="openModal('invite-modal')">+ Invite Member</button>
+        </div>
+    </header>
+    <main class="main-content">
+        <div class="page-header">
+            <div class="page-header-left">
+                <h1>Team Members</h1>
+                <p>Manage your organization's team</p>
+            </div>
+        </div>
+        <div class="team-grid" id="team-grid">
+            <div class="skeleton" style="height:200px;border-radius:12px"></div>
+            <div class="skeleton" style="height:200px;border-radius:12px"></div>
+            <div class="skeleton" style="height:200px;border-radius:12px"></div>
+        </div>
+    </main>
+</div>
+
+<!-- Invite Modal -->
+<div class="modal-overlay" id="invite-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Invite Team Member</span>
+            <button class="modal-close" onclick="closeModal('invite-modal')">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group"><label class="form-label">Full Name *</label><input type="text" class="form-control" id="inv-name"></div>
+            <div class="form-group"><label class="form-label">Email *</label><input type="email" class="form-control" id="inv-email"></div>
+            <div class="form-group"><label class="form-label">Password *</label><input type="password" class="form-control" id="inv-pass"></div>
+            <div class="form-group"><label class="form-label">Role</label>
+                <select class="form-control" id="inv-role">
+                    <option value="member">Member</option>
+                    <option value="manager">Manager</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('invite-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="inviteMember()">Add Member</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+Auth.requireAuth();
+document.getElementById('sidebar-wrap').innerHTML = renderSidebar('team');
+document.getElementById('user-card-btn')?.addEventListener('click', () => { Auth.clear(); window.location.href='index.html'; });
+
+async function loadTeam() {
+    try {
+        const [users, tasks] = await Promise.all([GET('/users'), GET('/tasks')]);
+        document.getElementById('team-grid').innerHTML = users.map(u => {
+            const myTasks    = tasks.filter(t => t.assigned_to === u.id);
+            const myDone     = myTasks.filter(t => t.status === 'done').length;
+            const myActive   = myTasks.filter(t => t.status === 'in-progress').length;
+            const roleColors = { admin:'var(--accent)', manager:'var(--blue)', member:'var(--green)' };
+            return `
+                <div class="team-card">
+                    <div class="avatar" style="background:${roleColors[u.role]||'var(--accent)'};">${initials(u.name)}</div>
+                    <div class="team-card-name">${u.name}</div>
+                    <div class="team-card-email">${u.email}</div>
+                    <div class="team-card-role"><span class="badge" style="background:rgba(245,166,35,0.1);color:var(--text-secondary)">${u.role}</span></div>
+                    <div class="team-card-stats">
+                        <div class="team-stat"><div class="team-stat-val">${myTasks.length}</div><div class="team-stat-lbl">Tasks</div></div>
+                        <div class="team-stat"><div class="team-stat-val" style="color:var(--blue)">${myActive}</div><div class="team-stat-lbl">Active</div></div>
+                        <div class="team-stat"><div class="team-stat-val" style="color:var(--green)">${myDone}</div><div class="team-stat-lbl">Done</div></div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (err) { toast('Error', 'Failed to load team', 'error'); }
+}
+
+async function inviteMember() {
+    const name = document.getElementById('inv-name').value.trim();
+    const email = document.getElementById('inv-email').value.trim();
+    const pass  = document.getElementById('inv-pass').value;
+    if (!name || !email || !pass) { toast('Validation', 'All fields required', 'warning'); return; }
+    try {
+        await POST('/auth/register', { name, email, password: pass, role: document.getElementById('inv-role').value });
+        closeModal('invite-modal');
+        toast('Success', `${name} added to team`, 'success');
+        await loadTeam();
+    } catch (err) { toast('Error', err.message, 'error'); }
+}
+
+loadTeam();
+</script>
+</body>
+</html>

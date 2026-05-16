@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tasks — TaskFlow</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="toast-container"></div>
+
+<div class="app-shell">
+    <div id="sidebar-wrap"></div>
+
+    <header class="topbar">
+        <span class="topbar-title">Task Board</span>
+        <div class="topbar-actions">
+            <select class="form-control" id="project-filter" style="width:180px" onchange="loadTasks()">
+                <option value="">All Projects</option>
+            </select>
+            <select class="form-control" id="view-toggle" style="width:120px" onchange="switchView(this.value)">
+                <option value="kanban">Kanban</option>
+                <option value="list">List</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="openModal('create-task-modal')">+ New Task</button>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="page-header">
+            <div class="page-header-left">
+                <h1>Task Board</h1>
+                <p id="tasks-subtitle">Drag and drop tasks to update their status</p>
+            </div>
+        </div>
+
+        <!-- Kanban View -->
+        <div id="kanban-view">
+            <div class="kanban-board" id="kanban-board">
+                <!-- Columns rendered by JS -->
+            </div>
+        </div>
+
+        <!-- List View -->
+        <div id="list-view" style="display:none">
+            <div class="card" style="padding:0">
+                <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;gap:8px">
+                    <div class="search-wrap" style="flex:1">
+                        <span class="search-icon">⌕</span>
+                        <input type="text" class="form-control" id="list-search" placeholder="Search tasks…" oninput="renderList()">
+                    </div>
+                    <select class="form-control" style="width:140px" id="list-priority" onchange="renderList()">
+                        <option value="">All Priorities</option>
+                        <option value="critical">Critical</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                    </select>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Task</th>
+                                <th>Project</th>
+                                <th>Status</th>
+                                <th>Priority</th>
+                                <th>Assigned To</th>
+                                <th>Due Date</th>
+                            </tr>
+                        </thead>
+                        <tbody id="list-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- Create Task Modal -->
+<div class="modal-overlay" id="create-task-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Create New Task</span>
+            <button class="modal-close" onclick="closeModal('create-task-modal')">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group"><label class="form-label">Project *</label><select class="form-control" id="ct-project" onchange="loadMilestonesForProject()"><option value="">Select Project…</option></select></div>
+            <div class="form-group"><label class="form-label">Task Title *</label><input type="text" class="form-control" id="ct-title" placeholder="What needs to be done?"></div>
+            <div class="form-group"><label class="form-label">Description</label><textarea class="form-control" id="ct-desc" rows="2" placeholder="Optional details…"></textarea></div>
+            <div class="grid-2">
+                <div class="form-group"><label class="form-label">Status</label>
+                    <select class="form-control" id="ct-status">
+                        <option value="todo">To Do</option>
+                        <option value="in-progress">In Progress</option>
+                        <option value="review">Review</option>
+                        <option value="done">Done</option>
+                    </select>
+                </div>
+                <div class="form-group"><label class="form-label">Priority</label>
+                    <select class="form-control" id="ct-priority">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="form-group"><label class="form-label">Assign To</label><select class="form-control" id="ct-assign"><option value="">Unassigned</option></select></div>
+                <div class="form-group"><label class="form-label">Milestone</label><select class="form-control" id="ct-milestone"><option value="">None</option></select></div>
+            </div>
+            <div class="form-group"><label class="form-label">Due Date</label><input type="date" class="form-control" id="ct-due"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('create-task-modal')">Cancel</button>
+            <button class="btn btn-primary" id="ct-btn" onclick="createTask()">Create Task</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+Auth.requireAuth();
+document.getElementById('sidebar-wrap').innerHTML = renderSidebar('tasks');
+document.getElementById('user-card-btn')?.addEventListener('click', () => { Auth.clear(); window.location.href='index.html'; });
+
+let allTasks    = [];
+let allProjects = [];
+let allUsers    = [];
+let draggedId   = null;
+let currentView = 'kanban';
+
+const COLUMNS = [
+    { key: 'todo',        label: 'To Do',      color: '#7d8fa8' },
+    { key: 'in-progress', label: 'In Progress', color: '#3b82f6' },
+    { key: 'review',      label: 'Review',      color: '#a855f7' },
+    { key: 'done',        label: 'Done',        color: '#22c55e' }
+];
+
+async function init() {
+    [allProjects, allUsers] = await Promise.all([GET('/projects'), GET('/users')]);
+
+    // Populate project filter
+    const pf = document.getElementById('project-filter');
+    allProjects.forEach(p => pf.innerHTML += `<option value="${p.id}">${p.title}</option>`);
+
+    // Populate create-task form
+    const cp = document.getElementById('ct-project');
+    allProjects.forEach(p => cp.innerHTML += `<option value="${p.id}">${p.title}</option>`);
+
+    const ca = document.getElementById('ct-assign');
+    allUsers.forEach(u => ca.innerHTML += `<option value="${u.id}">${u.name}</option>`);
+
+    // Check URL params
+    const params = new URLSearchParams(location.search);
+    if (params.get('assigned') === 'me') {
+        document.getElementById('tasks-subtitle').textContent = 'Tasks assigned to you';
+    }
+
+    await loadTasks();
+}
+
+async function loadTasks() {
+    const pid = document.getElementById('project-filter').value;
+    const params = new URLSearchParams(location.search);
+    let url = '/tasks';
+    const qs = [];
+    if (pid) qs.push(`project_id=${pid}`);
+    if (params.get('assigned') === 'me') qs.push(`assigned_to=${Auth.getUser().id}`);
+    if (qs.length) url += '?' + qs.join('&');
+
+    allTasks = await GET(url);
+    renderKanban();
+    renderList();
+}
+
+function renderKanban() {
+    const board = document.getElementById('kanban-board');
+    board.innerHTML = COLUMNS.map(col => {
+        const tasks = allTasks.filter(t => t.status === col.key);
+        return `
+            <div class="kanban-col" id="col-${col.key}" ondragover="onDragOver(event,'${col.key}')" ondrop="onDrop(event,'${col.key}')" ondragleave="onDragLeave(event)">
+                <div class="kanban-col-header">
+                    <div class="kanban-col-title">
+                        <span class="kanban-col-dot" style="background:${col.color}"></span>
+                        ${col.label}
+                    </div>
+                    <span class="kanban-col-count">${tasks.length}</span>
+                </div>
+                <div class="kanban-items" id="items-${col.key}">
+                    ${tasks.map(t => kanbanCard(t)).join('')}
+                    ${!tasks.length ? `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.78rem">Drop tasks here</div>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Attach drag events
+    document.querySelectorAll('.kanban-card').forEach(card => {
+        card.addEventListener('dragstart', (e) => {
+            draggedId = parseInt(card.dataset.id);
+            card.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        });
+        card.addEventListener('dragend', () => {
+            card.classList.remove('dragging');
+            document.querySelectorAll('.kanban-col').forEach(c => c.classList.remove('drag-over'));
+        });
+    });
+}
+
+function kanbanCard(t) {
+    const overdue = isOverdue(t.due_date) && t.status !== 'done';
+    return `
+        <div class="kanban-card" draggable="true" data-id="${t.id}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px">
+                <div class="kanban-card-title">${t.title}</div>
+                ${priorityBadge(t.priority)}
+            </div>
+            ${t.project_title ? `<div class="kanban-card-project">📁 ${t.project_title}</div>` : ''}
+            ${t.milestone_title ? `<div class="kanban-card-project">🏁 ${t.milestone_title}</div>` : ''}
+            ${t.tags && t.tags.length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${t.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}</div>` : ''}
+            <div class="kanban-card-footer">
+                <span class="due-date ${overdue ? 'overdue' : ''}">
+                    📅 ${t.due_date ? formatDate(t.due_date) : 'No deadline'}
+                    ${overdue ? ' ⚠' : ''}
+                </span>
+                ${t.assigned_name
+                    ? `<div class="mini-avatar" title="${t.assigned_name}">${initials(t.assigned_name)}</div>`
+                    : '<span style="font-size:0.68rem;color:var(--text-muted)">Unassigned</span>'}
+            </div>
+        </div>
+    `;
+}
+
+function onDragOver(e, colKey) {
+    e.preventDefault();
+    document.getElementById(`col-${colKey}`).classList.add('drag-over');
+}
+function onDragLeave(e) {
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+        e.currentTarget.classList.remove('drag-over');
+    }
+}
+async function onDrop(e, newStatus) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drag-over');
+    if (!draggedId) return;
+    const task = allTasks.find(t => t.id === draggedId);
+    if (!task || task.status === newStatus) return;
+    task.status = newStatus;
+    renderKanban();
+    try {
+        await PATCH(`/tasks/${draggedId}/status`, { status: newStatus });
+        toast('Updated', `Task moved to ${newStatus.replace('-',' ')}`, 'success');
+    } catch (err) {
+        toast('Error', err.message, 'error');
+        await loadTasks();
+    }
+    draggedId = null;
+}
+
+function renderList() {
+    const search    = document.getElementById('list-search').value.toLowerCase();
+    const priorityF = document.getElementById('list-priority').value;
+    let tasks = allTasks;
+    if (search)    tasks = tasks.filter(t => t.title.toLowerCase().includes(search) || (t.description||'').toLowerCase().includes(search));
+    if (priorityF) tasks = tasks.filter(t => t.priority === priorityF);
+
+    document.getElementById('list-tbody').innerHTML = tasks.map(t => `
+        <tr>
+            <td>
+                <div style="font-weight:600">${t.title}</div>
+                ${t.description ? `<div class="text-xs text-muted mt-8" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.description}</div>` : ''}
+            </td>
+            <td><span class="text-sm text-muted">${t.project_title||'—'}</span></td>
+            <td>${statusBadge(t.status)}</td>
+            <td>${priorityBadge(t.priority)}</td>
+            <td>
+                ${t.assigned_name
+                    ? `<div style="display:flex;align-items:center;gap:6px">${avatarEl(t.assigned_name,22)}<span class="text-sm">${t.assigned_name}</span></div>`
+                    : '<span class="text-sm text-muted">—</span>'}
+            </td>
+            <td class="${isOverdue(t.due_date) && t.status!=='done' ? '' : ''}">
+                <span style="${isOverdue(t.due_date) && t.status!=='done' ? 'color:var(--red)' : 'color:var(--text-muted)'};font-size:0.82rem">
+                    ${formatDate(t.due_date)}
+                </span>
+            </td>
+        </tr>
+    `).join('') || '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted)">No tasks found</td></tr>';
+}
+
+function switchView(view) {
+    currentView = view;
+    document.getElementById('kanban-view').style.display = view === 'kanban' ? 'block' : 'none';
+    document.getElementById('list-view').style.display   = view === 'list'   ? 'block' : 'none';
+}
+
+async function loadMilestonesForProject() {
+    const pid = document.getElementById('ct-project').value;
+    const sel = document.getElementById('ct-milestone');
+    sel.innerHTML = '<option value="">None</option>';
+    if (!pid) return;
+    try {
+        const ms = await GET(`/projects/${pid}/milestones`);
+        ms.forEach(m => sel.innerHTML += `<option value="${m.id}">${m.title}</option>`);
+    } catch {}
+}
+
+async function createTask() {
+    const pid   = document.getElementById('ct-project').value;
+    const title = document.getElementById('ct-title').value.trim();
+    if (!pid)   { toast('Validation', 'Please select a project', 'warning'); return; }
+    if (!title) { toast('Validation', 'Task title is required', 'warning'); return; }
+
+    const btn = document.getElementById('ct-btn');
+    btn.disabled = true; btn.textContent = 'Creating…';
+    try {
+        await POST('/tasks', {
+            project_id:   pid,
+            milestone_id: document.getElementById('ct-milestone').value || null,
+            title,
+            description:  document.getElementById('ct-desc').value,
+            status:       document.getElementById('ct-status').value,
+            priority:     document.getElementById('ct-priority').value,
+            assigned_to:  document.getElementById('ct-assign').value || null,
+            due_date:     document.getElementById('ct-due').value
+        });
+        closeModal('create-task-modal');
+        toast('Created', `Task "${title}" added`, 'success');
+        document.getElementById('ct-title').value = '';
+        document.getElementById('ct-desc').value = '';
+        await loadTasks();
+    } catch (err) { toast('Error', err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Create Task'; }
+}
+
+init();
+</script>
+</body>
+</html>

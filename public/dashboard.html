@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard — TaskFlow</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .activity-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 9px 0;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .activity-item:last-child { border-bottom: none; }
+        .activity-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            margin-top: 6px;
+            flex-shrink: 0;
+        }
+        .activity-text { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; }
+        .activity-text strong { color: var(--text-primary); font-weight: 600; }
+        .activity-time { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+
+        .deadline-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .deadline-item:last-child { border-bottom: none; }
+        .deadline-info { flex: 1; min-width: 0; }
+        .deadline-title { font-size: 0.83rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .deadline-project { font-size: 0.72rem; color: var(--text-muted); }
+        .deadline-days {
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+        .deadline-days.urgent { background: var(--red-dim); color: var(--red); }
+        .deadline-days.soon   { background: var(--accent-dim); color: var(--accent); }
+        .deadline-days.ok     { background: var(--green-dim); color: var(--green); }
+
+        .project-progress-item {
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .project-progress-item:last-child { border-bottom: none; }
+        .project-progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .project-progress-name { font-size: 0.85rem; font-weight: 600; }
+        .project-progress-pct  { font-size: 0.78rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+
+        .chart-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 6px;
+            height: 80px;
+            padding-top: 10px;
+        }
+        .chart-bar-group { display: flex; flex-direction: column; align-items: center; flex: 1; gap: 4px; }
+        .chart-bar {
+            width: 100%;
+            border-radius: 3px 3px 0 0;
+            transition: height 0.6s cubic-bezier(.4,0,.2,1);
+            min-height: 3px;
+        }
+        .chart-bar-label { font-size: 0.62rem; color: var(--text-muted); text-transform: capitalize; text-align: center; }
+    </style>
+</head>
+<body>
+<div id="toast-container"></div>
+<div class="app-shell" id="app-shell">
+    <!-- Sidebar injected by JS -->
+    <div id="sidebar-wrap"></div>
+
+    <!-- Topbar -->
+    <header class="topbar">
+        <span class="topbar-title" id="page-greeting">Dashboard</span>
+        <div class="topbar-actions">
+            <div class="notif-wrap" style="position:relative">
+                <button class="icon-btn" id="notif-btn" title="Notifications">
+                    🔔
+                    <span class="notif-dot" id="notif-dot" style="display:none"></span>
+                </button>
+                <div class="notif-panel" id="notif-panel">
+                    <div class="notif-panel-header">
+                        <span class="font-600" style="font-size:0.85rem">Notifications</span>
+                        <button class="btn btn-ghost btn-sm" onclick="markAllRead()">Mark all read</button>
+                    </div>
+                    <div id="notif-list"><div class="empty-state" style="padding:20px"><div class="empty-icon">🔔</div><div class="empty-title">No notifications</div></div></div>
+                </div>
+            </div>
+            <a href="projects.html" class="btn btn-primary btn-sm">+ New Project</a>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main class="main-content">
+        <div class="page-header">
+            <div class="page-header-left">
+                <h1 id="dash-title">Good morning 👋</h1>
+                <p>Here's what's happening with your projects today.</p>
+            </div>
+        </div>
+
+        <!-- Stat Cards -->
+        <div class="grid-4" id="stats-grid">
+            <div class="skeleton" style="height:82px;border-radius:12px"></div>
+            <div class="skeleton" style="height:82px;border-radius:12px"></div>
+            <div class="skeleton" style="height:82px;border-radius:12px"></div>
+            <div class="skeleton" style="height:82px;border-radius:12px"></div>
+        </div>
+
+        <div class="grid-3 mt-24" style="grid-template-columns:1fr 1fr 300px">
+            <!-- Project Progress -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Project Progress</span>
+                    <a href="projects.html" class="btn btn-ghost btn-sm">View all →</a>
+                </div>
+                <div id="project-progress-list">
+                    <div class="skeleton" style="height:20px;margin-bottom:8px"></div>
+                    <div class="skeleton" style="height:20px;margin-bottom:8px"></div>
+                    <div class="skeleton" style="height:20px"></div>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Recent Activity</span>
+                </div>
+                <div id="activity-feed">
+                    <div class="skeleton" style="height:60px;margin-bottom:8px;border-radius:8px"></div>
+                    <div class="skeleton" style="height:60px;border-radius:8px"></div>
+                </div>
+            </div>
+
+            <!-- Upcoming Deadlines -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Upcoming Deadlines</span>
+                </div>
+                <div id="deadlines-list">
+                    <div class="skeleton" style="height:50px;margin-bottom:6px;border-radius:8px"></div>
+                    <div class="skeleton" style="height:50px;border-radius:8px"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Task Status Chart + My Tasks -->
+        <div class="grid-2 mt-24">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Tasks by Status</span>
+                </div>
+                <div id="status-chart"><div class="skeleton" style="height:100px;border-radius:8px"></div></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">My Assigned Tasks</span>
+                    <a href="tasks.html" class="btn btn-ghost btn-sm">View all →</a>
+                </div>
+                <div id="my-tasks-list">
+                    <div class="skeleton" style="height:40px;margin-bottom:6px;border-radius:6px"></div>
+                    <div class="skeleton" style="height:40px;border-radius:6px"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+Auth.requireAuth();
+
+const user = Auth.getUser();
+document.getElementById('sidebar-wrap').innerHTML = renderSidebar('dashboard');
+document.getElementById('page-greeting').textContent = 'Dashboard';
+
+// Greeting
+const hour = new Date().getHours();
+const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+document.getElementById('dash-title').textContent = `${greet}, ${user.name.split(' ')[0]} 👋`;
+
+// Logout
+document.getElementById('user-card-btn')?.addEventListener('click', () => {
+    Auth.clear();
+    window.location.href = 'index.html';
+});
+
+// Notification panel
+document.getElementById('notif-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.getElementById('notif-panel').classList.toggle('open');
+});
+
+async function markAllRead() {
+    try {
+        await PATCH('/users/notifications/read-all');
+        document.getElementById('notif-dot').style.display = 'none';
+        document.querySelectorAll('.notif-item.unread').forEach(el => el.classList.remove('unread'));
+    } catch {}
+}
+
+async function loadNotifications() {
+    try {
+        const data = await GET('/users/notifications');
+        document.getElementById('notif-dot').style.display = data.unread > 0 ? 'block' : 'none';
+        const list = document.getElementById('notif-list');
+        if (!data.notifications.length) return;
+        const typeIcon = { info: 'ℹ', warning: '⚠', success: '✓', deadline: '⏰' };
+        list.innerHTML = data.notifications.map(n => `
+            <div class="notif-item ${n.is_read ? '' : 'unread'}">
+                <div class="notif-item-title">${typeIcon[n.type] || 'ℹ'} ${n.title}</div>
+                <div class="notif-item-msg">${n.message}</div>
+                <div class="notif-item-time">${relativeTime(n.created_at)}</div>
+            </div>
+        `).join('');
+    } catch {}
+}
+
+async function loadStats() {
+    try {
+        const s = await GET('/users/stats');
+
+        // Stat cards
+        document.getElementById('stats-grid').innerHTML = `
+            <div class="stat-card">
+                <div class="stat-icon" style="background:var(--blue-dim);color:var(--blue)">◈</div>
+                <div>
+                    <div class="stat-value">${s.totalProjects}</div>
+                    <div class="stat-label">Total Projects</div>
+                    <div class="stat-change up">▲ ${s.activeProjects} active</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon" style="background:var(--accent-dim);color:var(--accent)">✓</div>
+                <div>
+                    <div class="stat-value">${s.totalTasks}</div>
+                    <div class="stat-label">Total Tasks</div>
+                    <div class="stat-change up">▲ ${s.doneTasks} done</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon" style="background:var(--red-dim);color:var(--red)">⚠</div>
+                <div>
+                    <div class="stat-value">${s.overdueTasks}</div>
+                    <div class="stat-label">Overdue Tasks</div>
+                    <div class="stat-change ${s.overdueTasks > 0 ? 'down' : 'up'}">${s.overdueTasks > 0 ? '▼ needs attention' : '● all on track'}</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon" style="background:var(--green-dim);color:var(--green)">⊕</div>
+                <div>
+                    <div class="stat-value">${s.totalUsers}</div>
+                    <div class="stat-label">Team Members</div>
+                    <div class="stat-change up">▲ ${s.myTasks} assigned to me</div>
+                </div>
+            </div>
+        `;
+
+        // Project progress
+        document.getElementById('project-progress-list').innerHTML = s.projectProgress.map(p => {
+            const pct = calcProgress(p.done_tasks, p.total_tasks);
+            return `
+                <div class="project-progress-item">
+                    <div class="project-progress-header">
+                        <a href="project-detail.html?id=${p.id}" class="project-progress-name">${p.title}</a>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            ${statusBadge(p.status)}
+                            <span class="project-progress-pct">${pct}%</span>
+                        </div>
+                    </div>
+                    ${progressBar(pct)}
+                    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px">${p.done_tasks} / ${p.total_tasks} tasks done</div>
+                </div>
+            `;
+        }).join('') || '<div class="empty-state" style="padding:20px"><div class="empty-icon">◈</div><div class="empty-title">No projects yet</div></div>';
+
+        // Activity feed
+        document.getElementById('activity-feed').innerHTML = s.recentActivity.map(a => {
+            const actions = {
+                'created':        m => `<strong>${a.user_name}</strong> created ${a.entity_type} <strong>${m.title || ''}</strong>`,
+                'status_changed': m => `<strong>${a.user_name}</strong> moved <strong>${m.title || ''}</strong> from <em>${m.from}</em> → <strong>${m.to}</strong>`,
+                'updated':        m => `<strong>${a.user_name}</strong> updated ${a.entity_type} <strong>${m.title || ''}</strong>`,
+                'deleted':        m => `<strong>${a.user_name}</strong> deleted a ${a.entity_type}`,
+            };
+            const meta = a.meta || {};
+            const text = (actions[a.action] || (() => `<strong>${a.user_name}</strong> performed ${a.action}`))(meta);
+            return `
+                <div class="activity-item">
+                    <div class="activity-dot"></div>
+                    <div>
+                        <div class="activity-text">${text}</div>
+                        <div class="activity-time">${relativeTime(a.created_at)}</div>
+                    </div>
+                </div>
+            `;
+        }).join('') || '<div class="empty-state" style="padding:20px"><div class="empty-icon">📋</div><div class="empty-title">No recent activity</div></div>';
+
+        // Deadlines
+        document.getElementById('deadlines-list').innerHTML = s.upcomingDeadlines.map(t => {
+            const d = daysUntil(t.due_date);
+            const cls = d <= 1 ? 'urgent' : d <= 3 ? 'soon' : 'ok';
+            const label = d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : `${d}d`;
+            return `
+                <div class="deadline-item">
+                    ${priorityBadge(t.priority)}
+                    <div class="deadline-info">
+                        <div class="deadline-title">${t.title}</div>
+                        <div class="deadline-project">${formatDate(t.due_date)}</div>
+                    </div>
+                    <div class="deadline-days ${cls}">${label}</div>
+                </div>
+            `;
+        }).join('') || '<div class="empty-state" style="padding:16px"><div class="empty-icon">✓</div><div class="empty-title">No upcoming deadlines</div></div>';
+
+        // Status chart
+        const statusColors = { todo:'#7d8fa8', 'in-progress':'#3b82f6', review:'#a855f7', done:'#22c55e' };
+        const maxCount = Math.max(...s.tasksByStatus.map(t => t.count), 1);
+        document.getElementById('status-chart').innerHTML = `
+            <div class="chart-bars">
+                ${s.tasksByStatus.map(t => `
+                    <div class="chart-bar-group">
+                        <span style="font-size:0.7rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace">${t.count}</span>
+                        <div class="chart-bar" style="background:${statusColors[t.status]||'var(--accent)'};height:${Math.round((t.count/maxCount)*70)+10}px"></div>
+                        <div class="chart-bar-label">${t.status}</div>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="divider"></div>
+            <div style="display:flex;flex-wrap:wrap;gap:12px">
+                ${s.tasksByStatus.map(t => `
+                    <div style="display:flex;align-items:center;gap:5px;font-size:0.75rem;color:var(--text-secondary)">
+                        <span style="width:8px;height:8px;border-radius:50%;background:${statusColors[t.status]||'var(--accent)'}"></span>
+                        ${t.status}: <strong>${t.count}</strong>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+
+    } catch (err) {
+        console.error(err);
+        toast('Error', 'Failed to load dashboard data', 'error');
+    }
+
+    // My Tasks (assigned to me) — separate try-catch so a failure here
+    // doesn't roll back the stats that were already rendered above
+    try {
+        const myTasks = await GET(`/tasks?assigned_to=${user.id}`);
+        const activeTasks = myTasks.filter(t => t.status !== 'done').slice(0, 6);
+        document.getElementById('my-tasks-list').innerHTML = activeTasks.map(t => `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-light)">
+                ${priorityBadge(t.priority)}
+                <div style="flex:1;min-width:0">
+                    <div style="font-size:0.83rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.title}</div>
+                    <div style="font-size:0.7rem;color:var(--text-muted)">${t.project_title || ''}</div>
+                </div>
+                ${statusBadge(t.status)}
+            </div>
+        `).join('') || '<div class="empty-state" style="padding:20px"><div class="empty-icon">🎉</div><div class="empty-title">No tasks assigned</div></div>';
+    } catch (err) {
+        console.error(err);
+        toast('Error', 'Failed to load assigned tasks', 'error');
+    }
+}
+
+loadStats();
+loadNotifications();
+</script>
+</body>
+</html>
