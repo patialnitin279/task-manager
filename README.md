@@ -256,6 +256,6 @@ http://localhost:3000
 ## 👨‍💻 Author
 
 **Black Grapes Softech, Indore**
-Final Year Project — BCA/MCA 2026
+Final Year Project — MCA 2026
 Enrolled Date: 28/03/2026
 
