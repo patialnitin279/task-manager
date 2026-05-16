@@ -240,19 +240,6 @@ http://localhost:3000
 
 ---
 
-## 📈 Project Milestones (Academic)
-
-| # | Milestone                   | Status      | Due Date   |
-|---|-----------------------------|-------------|------------|
-| 1 | Requirements & Research     | ✅ Completed | 10/04/2026 |
-| 2 | UI/UX Design                | ✅ Completed | 25/04/2026 |
-| 3 | Frontend Development        | 🔄 In Progress | 20/05/2026 |
-| 4 | Backend Development         | 🔄 In Progress | 10/06/2026 |
-| 5 | Testing & QA                | ⏳ Pending  | 01/07/2026 |
-| 6 | Deployment & Documentation  | ⏳ Pending  | 30/07/2026 |
-
----
-
 ## 👨‍💻 Author
 
 **Black Grapes Softech, Indore**
